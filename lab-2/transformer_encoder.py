@@ -1,406 +1,182 @@
 """
-Transformer Encoder - Implementação From Scratch
+Laboratório P1 - Construindo o Transformer Encoder "From Scratch"
 Disciplina: Tópicos em Inteligência Artificial – 2026.1
 Professor: Prof. Dimmy Magalhães
-
-Baseado no artigo: "Attention Is All You Need" (Vaswani et al., 2017)
-Ferramentas: Python 3.x, numpy, pandas
+Instituição: iCEV - Instituto de Ensino Superior
 """
 
 import numpy as np
 import pandas as pd
 
+# Semente para reprodutibilidade
+np.random.seed(42)
 
-class TransformerEncoder:
-    """
-    Implementação completa do Transformer Encoder com N=6 camadas.
-    """
-    
-    def __init__(self, vocab_size, d_model=64, d_ff=256, d_k=64, n_layers=6, epsilon=1e-6):
-        """
-        Inicializa o Transformer Encoder.
-        
-        Args:
-            vocab_size: Tamanho do vocabulário
-            d_model: Dimensão do modelo (512 no paper original, 64 para fins práticos)
-            d_ff: Dimensão da camada feed-forward (2048 no paper, 256 aqui)
-            d_k: Dimensão das chaves para scaling (√d_k)
-            n_layers: Número de camadas do encoder (N=6)
-            epsilon: Valor pequeno para evitar divisão por zero na normalização
-        """
-        self.vocab_size = vocab_size
-        self.d_model = d_model
-        self.d_ff = d_ff
+# ============================================================
+# PASSO 1: PREPARAÇÃO DOS DADOS
+# ============================================================
+
+# 1. Vocabulário como DataFrame
+vocabulario = {
+    "palavra": ["o", "banco", "bloqueou", "cartao", "meu", "de", "credito", "a", "conta", "foi"],
+    "id":      [  0,      1,         2,        3,     4,    5,         6,    7,       8,     9 ]
+}
+df_vocab = pd.DataFrame(vocabulario)
+print("=== Vocabulário ===")
+print(df_vocab.to_string(index=False))
+
+# Mapeamento palavra -> id
+word2id = dict(zip(df_vocab["palavra"], df_vocab["id"]))
+
+# 2. Frase de entrada e conversão para IDs
+frase = ["o", "banco", "bloqueou", "o", "cartao"]
+token_ids = [word2id[w] for w in frase]
+print(f"\nFrase de entrada : {frase}")
+print(f"IDs dos tokens   : {token_ids}")
+
+# 3. Parâmetros do modelo
+vocab_size     = len(df_vocab)
+d_model        = 64        # Simplificado (paper usa 512)
+d_ff           = d_model * 4   # 256 — paper usa d_ff = 2048
+d_k            = d_model       # dimensão de Q, K, V por cabeça (single-head aqui)
+N_LAYERS       = 6
+EPSILON        = 1e-6
+
+# Tabela de embeddings: shape (vocab_size, d_model)
+embedding_table = np.random.randn(vocab_size, d_model)
+
+# 4. Tensor de entrada X: shape (BatchSize=1, SeqLen, d_model)
+X_input = embedding_table[token_ids]           # (SeqLen, d_model)
+X_input = X_input[np.newaxis, :, :]           # (1, SeqLen, d_model)
+
+print(f"\nFormato do tensor de entrada X: {X_input.shape}  → (Batch, Tokens, d_model)")
+
+
+# ============================================================
+# PASSO 2: MOTOR MATEMÁTICO
+# ============================================================
+
+# ----------------------------------------------------------
+# 2.1  Softmax própria (estável numericamente)
+# ----------------------------------------------------------
+def softmax(x):
+    """Softmax ao longo do último eixo."""
+    e_x = np.exp(x - np.max(x, axis=-1, keepdims=True))  # subtrai max p/ estabilidade
+    return e_x / np.sum(e_x, axis=-1, keepdims=True)
+
+
+# ----------------------------------------------------------
+# 2.2  Scaled Dot-Product Attention
+# ----------------------------------------------------------
+class ScaledDotProductAttention:
+    def __init__(self, d_model, d_k):
+        # Pesos projetores Q, K, V — inicializados aleatoriamente
+        self.WQ = np.random.randn(d_model, d_k) * np.sqrt(2.0 / d_model)
+        self.WK = np.random.randn(d_model, d_k) * np.sqrt(2.0 / d_model)
+        self.WV = np.random.randn(d_model, d_k) * np.sqrt(2.0 / d_model)
         self.d_k = d_k
-        self.n_layers = n_layers
-        self.epsilon = epsilon
-        
-        # Tabela de Embeddings
-        self.embedding_table = np.random.randn(vocab_size, d_model) * 0.1
-        
-        # Inicializar pesos para cada camada
-        self.layers = []
-        for _ in range(n_layers):
-            layer_weights = self._initialize_layer_weights()
-            self.layers.append(layer_weights)
-    
-    def _initialize_layer_weights(self):
+
+    def forward(self, X):
         """
-        Inicializa os pesos de uma única camada do encoder.
+        X: (Batch, SeqLen, d_model)
+        Retorna: (Batch, SeqLen, d_k)
         """
-        # Matrizes de projeção para Q, K, V (Self-Attention)
-        W_Q = np.random.randn(self.d_model, self.d_model) * np.sqrt(2.0 / self.d_model)
-        W_K = np.random.randn(self.d_model, self.d_model) * np.sqrt(2.0 / self.d_model)
-        W_V = np.random.randn(self.d_model, self.d_model) * np.sqrt(2.0 / self.d_model)
-        
-        # Pesos para Feed-Forward Network
-        W1 = np.random.randn(self.d_model, self.d_ff) * np.sqrt(2.0 / self.d_model)
-        b1 = np.zeros(self.d_ff)
-        W2 = np.random.randn(self.d_ff, self.d_model) * np.sqrt(2.0 / self.d_ff)
-        b2 = np.zeros(self.d_model)
-        
-        # Parâmetros para Layer Normalization (gamma e beta)
-        gamma_1 = np.ones(self.d_model)
-        beta_1 = np.zeros(self.d_model)
-        gamma_2 = np.ones(self.d_model)
-        beta_2 = np.zeros(self.d_model)
-        
-        return {
-            'W_Q': W_Q, 'W_K': W_K, 'W_V': W_V,
-            'W1': W1, 'b1': b1, 'W2': W2, 'b2': b2,
-            'gamma_1': gamma_1, 'beta_1': beta_1,
-            'gamma_2': gamma_2, 'beta_2': beta_2
-        }
-    
-    def softmax(self, x, axis=-1):
-        """
-        Implementação própria da função Softmax usando exponenciais.
-        
-        Args:
-            x: Array de entrada
-            axis: Eixo ao longo do qual aplicar softmax
-            
-        Returns:
-            Array após aplicação do softmax
-        """
-        # Subtrair o máximo para estabilidade numérica
-        x_max = np.max(x, axis=axis, keepdims=True)
-        exp_x = np.exp(x - x_max)
-        sum_exp = np.sum(exp_x, axis=axis, keepdims=True)
-        return exp_x / sum_exp
-    
-    def scaled_dot_product_attention(self, Q, K, V):
-        """
-        Implementação do Scaled Dot-Product Attention.
-        
-        Equação: Attention(Q, K, V) = softmax(QK^T / √d_k)V
-        
-        Args:
-            Q: Query matrix (batch_size, seq_len, d_model)
-            K: Key matrix (batch_size, seq_len, d_model)
-            V: Value matrix (batch_size, seq_len, d_model)
-            
-        Returns:
-            Output após atenção e matriz de scores
-        """
-        # Passo 1: Calcular o produto escalar entre Q e K^T
-        # Q @ K^T -> (batch, seq_len, d_model) @ (batch, d_model, seq_len)
-        scores = np.matmul(Q, K.transpose(0, 2, 1))
-        
-        # Passo 2: Scaling - dividir por √d_k
-        scores = scores / np.sqrt(self.d_k)
-        
-        # Passo 3: Aplicar Softmax
-        attention_weights = self.softmax(scores, axis=-1)
-        
-        # Passo 4: Multiplicar pelos valores V
-        output = np.matmul(attention_weights, V)
-        
-        return output, attention_weights
-    
-    def self_attention(self, X, weights):
-        """
-        Aplica Self-Attention completo com as projeções Q, K, V.
-        
-        Args:
-            X: Tensor de entrada (batch_size, seq_len, d_model)
-            weights: Dicionário com os pesos da camada
-            
-        Returns:
-            Output após self-attention
-        """
-        # Passo 1: Gerar Q, K, V através de projeções lineares
-        Q = np.matmul(X, weights['W_Q'])  # (batch, seq_len, d_model)
-        K = np.matmul(X, weights['W_K'])  # (batch, seq_len, d_model)
-        V = np.matmul(X, weights['W_V'])  # (batch, seq_len, d_model)
-        
-        # Passo 2: Aplicar Scaled Dot-Product Attention
-        attention_output, _ = self.scaled_dot_product_attention(Q, K, V)
-        
-        return attention_output
-    
-    def layer_norm(self, x, gamma, beta):
-        """
-        Implementação da Layer Normalization.
-        
-        Normaliza na dimensão dos features (último eixo).
-        
-        Args:
-            x: Tensor de entrada
-            gamma: Parâmetro de escala
-            beta: Parâmetro de deslocamento
-            
-        Returns:
-            Tensor normalizado
-        """
-        # Calcular média e variância na dimensão dos features (axis=-1)
-        mean = np.mean(x, axis=-1, keepdims=True)
-        var = np.var(x, axis=-1, keepdims=True)
-        
-        # Normalizar: (x - mean) / √(var + epsilon)
-        x_norm = (x - mean) / np.sqrt(var + self.epsilon)
-        
-        # Aplicar escala e deslocamento aprendíveis
-        return gamma * x_norm + beta
-    
-    def feed_forward_network(self, x, weights):
-        """
-        Implementação da Feed-Forward Network (FFN).
-        
-        Equação: FFN(x) = max(0, xW1 + b1)W2 + b2
-        
-        Args:
-            x: Tensor de entrada (batch_size, seq_len, d_model)
-            weights: Dicionário com os pesos da camada
-            
-        Returns:
-            Output após FFN
-        """
-        # Primeira transformação linear: d_model -> d_ff
-        hidden = np.matmul(x, weights['W1']) + weights['b1']
-        
-        # Ativação ReLU: max(0, x)
-        hidden = np.maximum(0, hidden)
-        
-        # Segunda transformação linear: d_ff -> d_model
-        output = np.matmul(hidden, weights['W2']) + weights['b2']
-        
+        Q = X @ self.WQ   # (B, S, d_k)
+        K = X @ self.WK   # (B, S, d_k)
+        V = X @ self.WV   # (B, S, d_k)
+
+        # Produto escalar QK^T / sqrt(d_k)
+        scores = (Q @ K.transpose(0, 2, 1)) / np.sqrt(self.d_k)  # (B, S, S)
+
+        # Softmax
+        attn_weights = softmax(scores)  # (B, S, S)
+
+        # Soma ponderada dos valores
+        output = attn_weights @ V       # (B, S, d_k)
         return output
-    
-    def encoder_layer(self, X, layer_weights):
+
+
+# ----------------------------------------------------------
+# 2.3  Layer Normalization
+# ----------------------------------------------------------
+def layer_norm(X, epsilon=EPSILON):
+    """
+    Normaliza ao longo do último eixo (features).
+    X: (..., d_model)
+    """
+    mean = np.mean(X, axis=-1, keepdims=True)
+    var  = np.var(X,  axis=-1, keepdims=True)
+    return (X - mean) / np.sqrt(var + epsilon)
+
+
+# ----------------------------------------------------------
+# 2.4  Feed-Forward Network
+# ----------------------------------------------------------
+class FeedForwardNetwork:
+    def __init__(self, d_model, d_ff):
+        # Pesos e biases das duas camadas densas
+        self.W1 = np.random.randn(d_model, d_ff) * np.sqrt(2.0 / d_model)
+        self.b1 = np.zeros((1, 1, d_ff))
+        self.W2 = np.random.randn(d_ff, d_model) * np.sqrt(2.0 / d_ff)
+        self.b2 = np.zeros((1, 1, d_model))
+
+    def forward(self, X):
         """
-        Processa uma única camada do encoder.
-        
-        Fluxo:
-        1. X_att = SelfAttention(X)
-        2. X_norm1 = LayerNorm(X + X_att)  # Residual + Norm
-        3. X_ffn = FFN(X_norm1)
-        4. X_out = LayerNorm(X_norm1 + X_ffn)  # Residual + Norm
-        
-        Args:
-            X: Tensor de entrada (batch_size, seq_len, d_model)
-            layer_weights: Pesos da camada
-            
-        Returns:
-            Output da camada (batch_size, seq_len, d_model)
+        FFN(x) = max(0, xW1 + b1)W2 + b2
+        X: (Batch, SeqLen, d_model)
         """
-        # Sub-camada 1: Multi-Head Self-Attention + Residual + Norm
-        X_att = self.self_attention(X, layer_weights)
-        X_norm1 = self.layer_norm(X + X_att, layer_weights['gamma_1'], layer_weights['beta_1'])
-        
-        # Sub-camada 2: Feed-Forward Network + Residual + Norm
-        X_ffn = self.feed_forward_network(X_norm1, layer_weights)
-        X_out = self.layer_norm(X_norm1 + X_ffn, layer_weights['gamma_2'], layer_weights['beta_2'])
-        
+        hidden = np.maximum(0, X @ self.W1 + self.b1)   # ReLU  (B, S, d_ff)
+        output = hidden @ self.W2 + self.b2              # (B, S, d_model)
+        return output
+
+
+# ----------------------------------------------------------
+# 2.5  Bloco Encoder completo (uma camada)
+# ----------------------------------------------------------
+class EncoderLayer:
+    def __init__(self, d_model, d_k, d_ff):
+        self.attention = ScaledDotProductAttention(d_model, d_k)
+        self.ffn       = FeedForwardNetwork(d_model, d_ff)
+
+    def forward(self, X):
+        """
+        Fluxo exato conforme o enunciado:
+        1. X_att   = SelfAttention(X)
+        2. X_norm1 = LayerNorm(X + X_att)
+        3. X_ffn   = FFN(X_norm1)
+        4. X_out   = LayerNorm(X_norm1 + X_ffn)
+        """
+        X_att   = self.attention.forward(X)          # (B, S, d_k==d_model)
+        X_norm1 = layer_norm(X + X_att)              # conexão residual + LN
+        X_ffn   = self.ffn.forward(X_norm1)          # FFN
+        X_out   = layer_norm(X_norm1 + X_ffn)        # conexão residual + LN
         return X_out
-    
-    def embed(self, token_ids):
-        """
-        Converte IDs de tokens em vetores de embedding.
-        
-        Args:
-            token_ids: Lista ou array de IDs de tokens
-            
-        Returns:
-            Tensor de embeddings (batch_size, seq_len, d_model)
-        """
-        # Adicionar dimensão de batch se necessário
-        if isinstance(token_ids, list):
-            token_ids = np.array(token_ids)
-        
-        if len(token_ids.shape) == 1:
-            token_ids = token_ids[np.newaxis, :]  # (1, seq_len)
-        
-        # Buscar embeddings da tabela
-        embeddings = self.embedding_table[token_ids]
-        
-        return embeddings
-    
-    def forward(self, token_ids):
-        """
-        Forward pass completo através de todas as N=6 camadas do encoder.
-        
-        Args:
-            token_ids: Lista de IDs de tokens da frase de entrada
-            
-        Returns:
-            Vetor Z final (batch_size, seq_len, d_model)
-        """
-        # Passo 1: Converter tokens em embeddings
-        X = self.embed(token_ids)
-        
-        print(f"Shape inicial após embeddings: {X.shape}")
-        
-        # Passo 2: Passar por todas as N camadas do encoder
-        for i, layer_weights in enumerate(self.layers):
-            X = self.encoder_layer(X, layer_weights)
-            print(f"Shape após camada {i+1}: {X.shape}")
-        
-        print(f"\nShape final do vetor Z: {X.shape}")
-        return X
 
 
-def create_vocabulary():
-    """
-    Cria um DataFrame simulando um vocabulário simples.
-    
-    Returns:
-        DataFrame com mapeamento palavra -> ID
-    """
-    vocab_dict = {
-        "o": 0,
-        "banco": 1,
-        "bloqueou": 2,
-        "cartao": 3,
-        "meu": 4,
-        "cliente": 5,
-        "solicitou": 6,
-        "novo": 7,
-        "emprestimo": 8,
-        "<PAD>": 9,  # Token de padding
-        "<UNK>": 10  # Token desconhecido
-    }
-    
-    vocab_df = pd.DataFrame(list(vocab_dict.items()), columns=['palavra', 'id'])
-    return vocab_df, vocab_dict
+# ============================================================
+# PASSO 3: EMPILHANDO N=6 CAMADAS
+# ============================================================
 
+# Cria as 6 camadas independentes (cada uma com seus próprios pesos)
+encoder_layers = [EncoderLayer(d_model, d_k, d_ff) for _ in range(N_LAYERS)]
 
-def tokenize_sentence(sentence, vocab_dict):
-    """
-    Converte uma frase em lista de IDs de tokens.
-    
-    Args:
-        sentence: String com a frase
-        vocab_dict: Dicionário de vocabulário
-        
-    Returns:
-        Lista de IDs de tokens
-    """
-    words = sentence.lower().split()
-    token_ids = [vocab_dict.get(word, vocab_dict['<UNK>']) for word in words]
-    return token_ids
+X = X_input.copy()
 
+print(f"\n=== Passagem pelas {N_LAYERS} camadas do Encoder ===")
+print(f"Formato de entrada na Camada 1: {X.shape}")
 
-def main():
-    """
-    Função principal que demonstra o funcionamento do Transformer Encoder.
-    """
-    print("=" * 70)
-    print("TRANSFORMER ENCODER - IMPLEMENTAÇÃO FROM SCRATCH")
-    print("Tópicos em Inteligência Artificial – 2026.1")
-    print("=" * 70)
-    print()
-    
-    # ==================== PASSO 1: PREPARAÇÃO DOS DADOS ====================
-    print("PASSO 1: Preparação dos Dados")
-    print("-" * 70)
-    
-    # Criar vocabulário
-    vocab_df, vocab_dict = create_vocabulary()
-    vocab_size = len(vocab_dict)
-    
-    print("\nVocabulário criado:")
-    print(vocab_df)
-    print(f"\nTamanho do vocabulário: {vocab_size}")
-    
-    # Definir frase de entrada
-    sentence = "o banco bloqueou meu cartao"
-    print(f"\nFrase de entrada: '{sentence}'")
-    
-    # Tokenizar a frase
-    token_ids = tokenize_sentence(sentence, vocab_dict)
-    print(f"IDs dos tokens: {token_ids}")
-    print()
-    
-    # ==================== PASSO 2 e 3: CONSTRUIR O ENCODER ====================
-    print("PASSO 2 e 3: Construindo e Executando o Transformer Encoder")
-    print("-" * 70)
-    
-    # Parâmetros do modelo
-    d_model = 64  # 512 no paper original
-    d_ff = 256    # 2048 no paper original
-    n_layers = 6  # 6 camadas como no paper
-    
-    print(f"\nParâmetros do modelo:")
-    print(f"  - d_model (dimensão do modelo): {d_model}")
-    print(f"  - d_ff (dimensão FFN): {d_ff}")
-    print(f"  - N (número de camadas): {n_layers}")
-    print()
-    
-    # Inicializar o Transformer Encoder
-    encoder = TransformerEncoder(
-        vocab_size=vocab_size,
-        d_model=d_model,
-        d_ff=d_ff,
-        d_k=d_model,
-        n_layers=n_layers
-    )
-    
-    print("Tabela de Embeddings inicializada com dimensões:", encoder.embedding_table.shape)
-    print()
-    
-    # ==================== FORWARD PASS ====================
-    print("Executando Forward Pass através das 6 camadas:")
-    print("-" * 70)
-    
-    # Executar o forward pass
-    Z = encoder.forward(token_ids)
-    
-    print()
-    print("=" * 70)
-    print("RESULTADO FINAL")
-    print("=" * 70)
-    print(f"\nVetor Z final (representação contextualizada):")
-    print(f"  - Shape: {Z.shape}")
-    print(f"  - Batch Size: {Z.shape[0]}")
-    print(f"  - Sequence Length: {Z.shape[1]}")
-    print(f"  - Model Dimension: {Z.shape[2]}")
-    print()
-    
-    # Mostrar o vetor Z para o primeiro token
-    print("Representação do primeiro token ('o'):")
-    print(f"  - Primeiras 10 dimensões: {Z[0, 0, :10]}")
-    print()
-    
-    # Validação de sanidade
-    assert Z.shape == (1, len(token_ids), d_model), \
-        f"Erro: Shape esperado (1, {len(token_ids)}, {d_model}), obtido {Z.shape}"
-    
-    print("✓ Validação de sanidade passou: dimensões corretas!")
-    print()
-    
-    # Estatísticas do vetor Z
-    print("Estatísticas do vetor Z:")
-    print(f"  - Média: {np.mean(Z):.6f}")
-    print(f"  - Desvio padrão: {np.std(Z):.6f}")
-    print(f"  - Mínimo: {np.min(Z):.6f}")
-    print(f"  - Máximo: {np.max(Z):.6f}")
-    print()
-    
-    print("=" * 70)
-    print("Implementação concluída com sucesso!")
-    print("=" * 70)
+for i, layer in enumerate(encoder_layers):
+    X = layer.forward(X)
+    print(f"  → Saída da Camada {i+1}: {X.shape}")
 
+# ----------------------------------------------------------
+# VALIDAÇÃO DE SANIDADE
+# ----------------------------------------------------------
+print("\n=== Validação de Sanidade ===")
+assert X.shape == X_input.shape, (
+    f"ERRO: formato esperado {X_input.shape}, obtido {X.shape}"
+)
+print(f"✓ Dimensões preservadas: {X.shape}  (Batch={X.shape[0]}, Tokens={X.shape[1]}, d_model={X.shape[2]})")
+print("✓ Tensor Z (representação contextualizada) gerado com sucesso!")
 
-if __name__ == "__main__":
-    main()
+print("\n=== Primeiros valores do Vetor Z (token 'o') ===")
+print(X[0, 0, :8].round(6))  # primeiros 8 valores do primeiro token
