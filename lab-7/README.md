@@ -101,6 +101,6 @@ git push origin main --tags
 
 ## Nota obrigatoria sobre uso de IA
 
-"Partes geradas/complementadas com IA, revisadas por [Seu Nome]".
+"Partes geradas/complementadas com IA, revisadas por Luis Fellipe Bezerra Barradas".
 
 Essa nota deve permanecer no README da versao entregue.
