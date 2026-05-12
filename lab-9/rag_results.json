@@ -1,0 +1,35 @@
+[
+  {
+    "query": "dor de cabeca latejante e luz incomodando",
+    "hypothetical_document": "Cefaleia pulsatil com irradiacao occipital e fotossensibilidade concomitante sugere enxaqueca recorrente com necessidade de avaliacao oftalmologica.",
+    "bi_encoder_retrieved": [
+      "Cefaleia pulsatil occipital com exacerbacao ao repouso e fotofobia concomitante pode indicar enxaqueca cronica em estagio inicial.",
+      "Fotofobia persistente associada a lacrimejamento e conjuntivite alergica frequentemente requer teste de sensibilidade e dessensibilizacao progressiva.",
+      "Trombose venosa profunda apresenta-se com edema assimetrico de membro inferior, dor a dorsiflexao do pe e eventual descoloracao.",
+      "Artrite reumatoide e doenca autoimune sistemica que causa inflamacao simetrica de articulacoes pequenas com tumefacao matinal prolongada.",
+      "Doenca pulmonar obstrutiva cronica resulta em limitacao progressiva do fluxo aereo com dispneia, tosse e producao de secrecao.",
+      "Tuberculose pulmonar manifesta-se com tosse cronica (>3 semanas), hemoptise, febre vespertina e perda ponderal progressiva.",
+      "Ulcera peptica perfurada causa dor subita intensa em facada, rigidez abdominal e possivel peritonite com choque cardiogenico.",
+      "Infarto agudo do miocardio manifesta-se por dor precordial opressiva com irradiacao para braco esquerdo, mandibula ou epigastrio.",
+      "Pneumonia comunitaria tipica apresenta febre, tosse produtiva, dispneia e opacidade lobar ao RX com broncograma aereo.",
+      "Embolia pulmonar aguda causa dispneia subita, dor pleuritica e taquicardia, com possivel sincope se maciça."
+    ],
+    "bi_encoder_scores": [
+      0.35726308822631836,
+      0.7606439590454102,
+      1.0943748950958252,
+      1.130922555923462,
+      1.1765943765640259,
+      1.1859335899353027,
+      1.2226035594940186,
+      1.235201120376587,
+      1.2355300188064575,
+      1.2475974559783936
+    ],
+    "final_documents": [
+      "Trombose venosa profunda apresenta-se com edema assimetrico de membro inferior, dor a dorsiflexao do pe e eventual descoloracao.",
+      "Ulcera peptica perfurada causa dor subita intensa em facada, rigidez abdominal e possivel peritonite com choque cardiogenico.",
+      "Infarto agudo do miocardio manifesta-se por dor precordial opressiva com irradiacao para braco esquerdo, mandibula ou epigastrio."
+    ],
+    "cross_encoder_scores": [
+      
